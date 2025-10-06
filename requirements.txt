@@ -1,0 +1,5 @@
+streamlit
+paper-qa>=5.29.1
+google-generativeai
+requests
+pypdf2
