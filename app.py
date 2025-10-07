@@ -299,6 +299,57 @@ with st.sidebar:
         st.session_state["gemini_api_key"] = api_key
         st.success("Gemini API key set for this session.")
 
+# -- model config
+with st.sidebar:
+    st.header("⚙️ Model & Index Settings")
+
+    # Fixed model names (not user-editable)
+    st.text_input("LLM model", "gemini/gemini-2.5-flash", key="cfg_llm", disabled=True)
+    st.text_input(
+        "Embedding model", "gemini/text-embedding-004", key="cfg_embed", disabled=True
+    )
+
+    # Generation / agent tuning
+    temperature = st.slider("temperature", 0.0, 1.0, 0.1, 0.05, key="cfg_temp")
+    use_agent_mode = st.checkbox(
+        "Use Agent Mode (agent_query)", True, key="cfg_use_agent"
+    )
+    search_count = st.number_input("search_count", 0, 20, 6, 1, key="cfg_search_count")
+    timeout_s = st.number_input("timeout (sec)", 10, 900, 300, 10, key="cfg_timeout")
+
+    # Answer settings
+    evidence_k = st.number_input("evidence_k", 1, 50, 8, 1, key="cfg_evidence_k")
+    answer_max_sources = st.number_input(
+        "answer_max_sources", 1, 20, 4, 1, key="cfg_ans_max_src"
+    )
+    evidence_summary_length = st.text_input(
+        "evidence_summary_length", "about 80 words", key="cfg_ev_sum_len"
+    )
+    answer_length = st.text_input(
+        "answer_length", "about 150 words, but can be longer", key="cfg_ans_len"
+    )
+    max_concurrent_requests = st.number_input(
+        "max_concurrent_requests", 1, 16, 2, 1, key="cfg_max_conc"
+    )
+
+    # Parsing / chunking
+    chunk_size = st.number_input(
+        "chunk_size", 512, 8192, 4000, 64, key="cfg_chunk_size"
+    )
+    overlap = st.number_input("overlap", 0, 2048, 200, 10, key="cfg_overlap")
+
+    verbosity = st.select_slider(
+        "verbosity", options=[0, 1, 2], value=1, key="cfg_verbosity"
+    )
+
+curr_embed = st.session_state.get("cfg_embed", "gemini/text-embedding-004")
+prev_embed = st.session_state.get("_prev_embed", None)
+if prev_embed is None:
+    st.session_state["_prev_embed"] = curr_embed
+elif prev_embed != curr_embed:
+    st.session_state["_prev_embed"] = curr_embed
+    st.sidebar.warning("Embedding model changed — please rebuild the index.")
+
 
 def download_sample_papers() -> str:
     papers = {
@@ -403,26 +454,44 @@ def create_gemini_settings(
     if force_parse_variant:
         parsing = dict(chunk_size=3997, overlap=203)  # tiny perturbation to bust caches
 
+    # Pull from sidebar (with same defaults as notebook)
+    llm = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
+    embed = st.session_state.get("cfg_embed", "gemini/text-embedding-004")
+    temp = st.session_state.get("cfg_temp", 0.1)
+
+    sc = int(st.session_state.get("cfg_search_count", 6))
+    to_sec = float(st.session_state.get("cfg_timeout", 300.0))
+
+    k = int(st.session_state.get("cfg_evidence_k", 8))
+    max_src = int(st.session_state.get("cfg_ans_max_src", 4))
+    ev_sum_len = st.session_state.get("cfg_ev_sum_len", "about 80 words")
+    max_conc = int(st.session_state.get("cfg_max_conc", 2))
+
+    csz = int(st.session_state.get("cfg_chunk_size", 4000))
+    ovl = int(st.session_state.get("cfg_overlap", 200))
+    if force_parse_variant:
+        csz = max(256, csz - 3)
+        ovl = ovl + 3
+
+    if salt:
+        answer_len += f" [salt:{salt}]"
+
     return Settings(
-        llm="gemini/gemini-2.5-flash",
-        summary_llm="gemini/gemini-2.5-flash",
-        agent=AgentSettings(
-            agent_llm="gemini/gemini-2.5-flash",
-            search_count=6,
-            timeout=300.0,
-        ),
-        embedding="gemini/text-embedding-004",
-        temperature=temperature,
+        llm=llm,
+        summary_llm=llm,
+        agent=AgentSettings(agent_llm=llm, search_count=sc, timeout=to_sec),
+        embedding=embed,
+        temperature=temp,
         paper_directory=paper_dir,
         answer=dict(
-            evidence_k=8,
-            answer_max_sources=4,
-            evidence_summary_length="about 80 words",
+            evidence_k=k,
+            answer_max_sources=max_src,
+            evidence_summary_length=ev_sum_len,
             answer_length=answer_len,
-            max_concurrent_requests=2,
+            max_concurrent_requests=max_conc,
         ),
-        parsing=parsing,
-        verbosity=1,
+        parsing=dict(chunk_size=csz, overlap=ovl),
+        verbosity=int(st.session_state.get("cfg_verbosity", 1)),
     )
 
 
@@ -592,8 +661,10 @@ def summarize_with_gemini(
 ) -> Dict[str, str]:
     """Return {'detailed': md_text, 'short': md_text} using Gemini."""
     ensure_gemini()
+    model_name = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
     model = genai.GenerativeModel(
-        model_name, generation_config={"temperature": temperature}
+        (model_name.split("/", 1)[1] if "/" in model_name else model_name),
+        generation_config={"temperature": temperature},
     )
 
     sources_block = (
@@ -681,7 +752,11 @@ with tab_custom:
     if st.button("Ask", key="custom_btn"):
         agent = PaperQAAgent(safe_session_path(papers_directory))
         with st.spinner("Querying..."):
-            resp = run_async(agent.ask_question(custom_q))
+            resp = run_async(
+                agent.ask_question(
+                    custom_q, use_agent=st.session_state.get("cfg_use_agent", True)
+                )
+            )
 
         if resp:
             ans = getattr(resp, "answer", str(resp))
