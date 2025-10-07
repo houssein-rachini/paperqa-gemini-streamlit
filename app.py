@@ -729,7 +729,7 @@ TASKS:
 # =========================
 # UI Tabs
 # =========================
-st.markdown("## 🤖 PaperQA + Gemini — Streamlit App")
+st.markdown("## 🤖 PaperQA2 + Gemini — Streamlit App")
 st.caption(
     "Upload PDFs → rebuild index → ask a custom question → summarize the answer (detailed + short)."
 )
