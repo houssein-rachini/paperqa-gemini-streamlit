@@ -22,12 +22,23 @@ import google.generativeai as genai
 st.set_page_config(page_title="PaperQA + Gemini", layout="wide")
 
 
-# --- Per-session working directory--
+# --- Cloud / Local detection ---
+def _env(name, default=""):
+    try:
+        return st.secrets.get(name, os.getenv(name, default))
+    except Exception:
+        return os.getenv(name, default)
 
-IS_CLOUD = (
-    "streamlit" in os.getenv("STREAMLIT_RUNTIME", "").lower()
-    or "STREAMLIT_SERVER_PORT" in os.environ
-)
+
+DEPLOY_ENV = (
+    _env("DEPLOY_ENV", "") or ""
+).lower()  # set to "cloud" or "local" to force
+if DEPLOY_ENV in {"cloud", "local"}:
+    IS_CLOUD = DEPLOY_ENV == "cloud"
+else:
+    # Streamlit Community Cloud runs under /home/appuser and mounts source at /mount/src
+    IS_CLOUD = os.path.exists("/home/appuser") or os.path.exists("/mount/src")
+
 
 # Separate roots: caches vs user PDFs
 CACHE_ROOT = Path(
