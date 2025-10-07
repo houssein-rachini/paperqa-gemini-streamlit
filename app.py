@@ -24,10 +24,7 @@ st.set_page_config(page_title="PaperQA + Gemini", layout="wide")
 
 # --- Cloud / Local detection ---
 def _env(name, default=""):
-    try:
-        return st.secrets.get(name, os.getenv(name, default))
-    except Exception:
-        return os.getenv(name, default)
+    return os.getenv(name, default)
 
 
 DEPLOY_ENV = (
@@ -659,20 +656,13 @@ def summarize_with_gemini(
     model_name: str = "gemini-2.5-flash",
     temperature: float = 0.1,
 ) -> Dict[str, str]:
-    """Return {'detailed': md_text, 'short': md_text} using Gemini."""
-    ensure_gemini()
-    model_name = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
-    model = genai.GenerativeModel(
-        (model_name.split("/", 1)[1] if "/" in model_name else model_name),
-        generation_config={"temperature": temperature},
-    )
-
+    """Return {'detailed': md_text, 'short': md_text} using Gemini, strictly from the input key."""
+    # Build prompt pieces outside the context to keep the critical section small
     sources_block = (
         "\n".join([f"[{i+1}] {s}" for i, s in enumerate(sources)])
         if sources
         else "None"
     )
-
     prompt = f"""
 You will simplify a technical answer into two user-friendly summaries.
 The original answer is between <answer>. Known sources are listed in <sources>.
@@ -696,9 +686,19 @@ TASKS:
    - 3-5 bullet points.
    - No citations.
    - Heading: "### Short Summary".
-"""
+""".strip()
 
-    resp = model.generate_content(prompt)
+    with gemini_key_env():
+        cfg_name = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
+        use_name = cfg_name or model_name
+        bare_name = use_name.split("/", 1)[1] if "/" in use_name else use_name
+
+        model = genai.GenerativeModel(
+            bare_name,
+            generation_config={"temperature": float(temperature)},
+        )
+        resp = model.generate_content(prompt)
+
     text = getattr(resp, "text", "") or ""
 
     # Split into two sections if headings exist
@@ -714,7 +714,7 @@ TASKS:
             detailed_md = text[:split_idx].strip()
             short_md = text[split_idx:].strip()
     else:
-        # Fallback: treat whole text as detailed and synthesize short bullets from the lines
+        # Fallback: treat whole text as detailed and synthesize short bullets
         detailed_md = text.strip()
         lines = [
             l.strip("-• ").strip()
