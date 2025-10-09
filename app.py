@@ -158,7 +158,7 @@ def show_api_key_modal():
 Sign in with your Google account if prompted.
 
 ### Step 2 — Create / Import a Project
-1. Choose **Create new project** or **Import from Google Cloud project**.
+1. Choose **Create a new project** or **Import projects**.
 2. Pick or name your project and click **Import**.
 
 ### Step 3 — Generate the API Key
