@@ -149,6 +149,70 @@ def gemini_key_env():
                 os.environ["GEMINI_API_KEY"] = prev_gemini
 
 
+@st.dialog("🔑 How to get your Gemini API key (Google AI Studio)")
+def show_api_key_modal():
+    st.markdown(
+        """
+### Step 1 — Open Google AI Studio
+👉 [**Click here to open AI Studio**](https://aistudio.google.com/projects)  
+Sign in with your Google account if prompted.
+
+### Step 2 — Create / Import a Project
+If prompted:
+1. Choose **Create new project** or **Import from Google Cloud project**.
+2. Pick or name your project and continue.
+
+### Step 3 — Generate the API Key
+1. In the **bottom of the left sidebar**, click **Get API key**.  
+2. Click **Create API key** in the top right corner → name the key and choose the cloud project you want the API key from. 
+3. Click **Create Key**.
+4. Copy the generated key.
+
+### Step 4 — Use it here
+Paste the key in the **sidebar** field  
+> “Enter your Gemini API key”  
+then click **🧪 Test key** to verify.
+
+> Your key stays in memory only for this session and is never saved to disk.
+"""
+    )
+    if st.button("Close", type="primary", use_container_width=True):
+        st.session_state["show_api_help"] = False
+        st.rerun()
+
+
+def _test_gemini_key():
+    try:
+        ensure_gemini()  # uses st.session_state["gemini_api_key"]
+
+        cfg_name = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
+        bare_id, full_id = _normalize_model_id(cfg_name)  # step 3
+
+        with _genai_lock():
+            m = genai.GenerativeModel(bare_id)
+            r = m.generate_content("ping")
+
+        txt = (getattr(r, "text", "") or "").strip()
+        st.success(f"API key works ✅ (model: {full_id})")
+        if txt:
+            st.caption((txt[:140] + "…") if len(txt) > 140 else txt)
+    except Exception as e:
+        st.error(f"Key test failed: {e}")
+
+
+def _normalize_model_id(name: str, default: str = "gemini-2.5-flash"):
+    """
+    Returns (bare_id_for_sdk, full_id_for_settings).
+    - SDK (google.generativeai) wants 'gemini-2.5-flash'
+    - PaperQA settings can use 'gemini/gemini-2.5-flash'
+    """
+    if not name:
+        return default, f"gemini/{default}"
+    bare = name.split("/", 1)[1] if "/" in name else name
+    full = name if "/" in name else f"gemini/{bare}"
+    return bare, full
+
+
 def _rm(path, removed: List[str]):
     try:
         p = Path(path)
@@ -283,6 +347,11 @@ def list_pdf_stats(papers_dir: str) -> str:
 # =========================
 with st.sidebar:
     st.header("🔐 Gemini API Key")
+    st.button(
+        "❓ How to get a key",
+        use_container_width=True,
+        on_click=lambda: st.session_state.update({"show_api_help": True}),
+    )
 
     api_key = st.text_input(
         "Enter your Gemini API key",
@@ -295,18 +364,34 @@ with st.sidebar:
     if api_key:
         st.session_state["gemini_api_key"] = api_key
         st.success("Gemini API key set for this session.")
+    st.button(
+        "🧪 Test key",
+        use_container_width=True,
+        on_click=_test_gemini_key,
+        disabled=not bool(st.session_state.get("gemini_api_key")),
+    )
 
 # -- model config
 with st.sidebar:
     st.header("⚙️ Model & Index Settings")
 
-    # Fixed model names (not user-editable)
-    st.text_input("LLM model", "gemini/gemini-2.5-flash", key="cfg_llm", disabled=True)
-    st.text_input(
-        "Embedding model", "gemini/text-embedding-004", key="cfg_embed", disabled=True
-    )
+    # --- Model choices ---
+    LLM_CHOICES = [
+        "gemini/gemini-2.5-flash",
+        "gemini/gemini-2.5-pro",
+    ]
+    EMBED_CHOICES = [
+        "gemini/text-embedding-004",
+    ]
 
-    # Generation / agent tuning
+    # --- Select models ---
+    st.session_state.setdefault("cfg_llm", LLM_CHOICES[0])
+    st.selectbox("LLM model", LLM_CHOICES, key="cfg_llm")
+
+    # no choices for embedding model
+    st.session_state.setdefault("cfg_embed", "gemini/text-embedding-004")
+
+    # --- Generation / agent tuning ---
     temperature = st.slider("temperature", 0.0, 1.0, 0.1, 0.05, key="cfg_temp")
     use_agent_mode = st.checkbox(
         "Use Agent Mode (agent_query)", True, key="cfg_use_agent"
@@ -314,7 +399,7 @@ with st.sidebar:
     search_count = st.number_input("search_count", 0, 20, 6, 1, key="cfg_search_count")
     timeout_s = st.number_input("timeout (sec)", 10, 900, 300, 10, key="cfg_timeout")
 
-    # Answer settings
+    # --- Answer settings ---
     evidence_k = st.number_input("evidence_k", 1, 50, 8, 1, key="cfg_evidence_k")
     answer_max_sources = st.number_input(
         "answer_max_sources", 1, 20, 4, 1, key="cfg_ans_max_src"
@@ -329,7 +414,7 @@ with st.sidebar:
         "max_concurrent_requests", 1, 16, 2, 1, key="cfg_max_conc"
     )
 
-    # Parsing / chunking
+    # --- Parsing / chunking ---
     chunk_size = st.number_input(
         "chunk_size", 512, 8192, 4000, 64, key="cfg_chunk_size"
     )
@@ -430,6 +515,8 @@ with st.sidebar:
 
     st.divider()
     st.caption(f"paper-qa version: **{_pq.__version__}**")
+    if st.session_state.get("show_api_help"):
+        show_api_key_modal()
 
 
 # =========================
@@ -449,7 +536,7 @@ def create_gemini_settings(
     # If we force_parse_variant, slightly change parsing params (harmless but unique)
     parsing = dict(chunk_size=4000, overlap=200)
     if force_parse_variant:
-        parsing = dict(chunk_size=3997, overlap=203)  # tiny perturbation to bust caches
+        parsing = dict(chunk_size=3997, overlap=203)  # tiny perturbation to bust cache
 
     # Pull from sidebar (with same defaults as notebook)
     llm = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
@@ -469,9 +556,6 @@ def create_gemini_settings(
     if force_parse_variant:
         csz = max(256, csz - 3)
         ovl = ovl + 3
-
-    if salt:
-        answer_len += f" [salt:{salt}]"
 
     return Settings(
         llm=llm,
@@ -656,8 +740,8 @@ def summarize_with_gemini(
     model_name: str = "gemini-2.5-flash",
     temperature: float = 0.1,
 ) -> Dict[str, str]:
-    """Return {'detailed': md_text, 'short': md_text} using Gemini, strictly from the input key."""
-    # Build prompt pieces outside the context to keep the critical section small
+    """Return {'detailed': md_text, 'short': md_text} using Gemini, with model id normalized."""
+    # Build prompt
     sources_block = (
         "\n".join([f"[{i+1}] {s}" for i, s in enumerate(sources)])
         if sources
@@ -688,20 +772,21 @@ TASKS:
    - Heading: "### Short Summary".
 """.strip()
 
-    with gemini_key_env():
-        cfg_name = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
-        use_name = cfg_name or model_name
-        bare_name = use_name.split("/", 1)[1] if "/" in use_name else use_name
+    # --- choose model & normalize ---
+    cfg_name = st.session_state.get("cfg_llm") or model_name
+    bare_id, _full_id = _normalize_model_id(cfg_name)  # <- step 3
 
+    # --- call Gemini ---
+    with gemini_key_env():
         model = genai.GenerativeModel(
-            bare_name,
+            bare_id,
             generation_config={"temperature": float(temperature)},
         )
         resp = model.generate_content(prompt)
 
     text = getattr(resp, "text", "") or ""
 
-    # Split into two sections if headings exist
+    # Parse into two sections
     detailed_md, short_md = "", ""
     lower = text.lower()
     if "detailed summary" in lower and "short summary" in lower:
@@ -714,7 +799,6 @@ TASKS:
             detailed_md = text[:split_idx].strip()
             short_md = text[split_idx:].strip()
     else:
-        # Fallback: treat whole text as detailed and synthesize short bullets
         detailed_md = text.strip()
         lines = [
             l.strip("-• ").strip()
@@ -731,7 +815,7 @@ TASKS:
 # =========================
 st.markdown("## 🤖 PaperQA2 + Gemini — Streamlit App")
 st.caption(
-    "Upload PDFs → rebuild index → ask a custom question → summarize the answer (detailed + short)."
+    "Upload PDFs → rebuild index → ask a question about the papers→ summarize the answer (detailed + short)."
 )
 
 tab_custom, tab_summaries, tab_tips = st.tabs(

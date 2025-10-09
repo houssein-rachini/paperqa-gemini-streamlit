@@ -1,5 +1,5 @@
-streamlit
+streamlit>=1.38
 paper-qa>=5.29.1
-google-generativeai
-requests
-pypdf2
+google-generativeai>=0.5.4
+requests>=2.31.0
+PyPDF2>=3.0.1
