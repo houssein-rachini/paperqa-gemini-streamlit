@@ -327,7 +327,7 @@ def nuke_index_artifacts(papers_dir: str) -> List[str]:
     return removed
 
 
-def list_pdf_stats(papers_dir: str) -> str:
+def list_docs_stats(papers_dir: str) -> str:
     pdfs = list(Path(papers_dir).glob("*.pdf"))
     txts = list(Path(papers_dir).glob("*.txt"))
     total_bytes = sum(p.stat().st_size for p in pdfs + txts)
@@ -335,6 +335,10 @@ def list_pdf_stats(papers_dir: str) -> str:
         f"PDFs: {len(pdfs)} | Texts: {len(txts)} | Total size: {total_bytes/1e6:.2f} MB"
     ]
     for p in pdfs[:20]:
+        lines.append(
+            f"- {p.name} | {p.stat().st_size/1e6:.2f} MB | mtime={time.ctime(p.stat().st_mtime)}"
+        )
+    for p in txts[:20]:
         lines.append(
             f"- {p.name} | {p.stat().st_size/1e6:.2f} MB | mtime={time.ctime(p.stat().st_mtime)}"
         )
@@ -572,7 +576,7 @@ with st.container():
 
     with st.expander("📤 Upload Papers", expanded=True):
         uploaded_files = st.file_uploader(
-            "Upload one or more PDFs", type=["pdf"], accept_multiple_files=True
+            "Upload one or more PDFs", type=["pdf", "txt"], accept_multiple_files=True
         )
 
     if uploaded_files:
@@ -620,8 +624,8 @@ with st.container():
 
 # --- Step 2: Index Rebuild (nukes + rebuild) ---
 st.markdown("### 2) Build / Rebuild Index")
-with st.expander("📑 Current PDF stats", expanded=False):
-    st.code(list_pdf_stats(safe_session_path(papers_directory)), language="text")
+with st.expander("📑 Current Documents stats", expanded=False):
+    st.code(list_docs_stats(safe_session_path(papers_directory)), language="text")
 
 col_a, col_b = st.columns([1, 2], vertical_alignment="top")
 with col_a:
