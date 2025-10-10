@@ -466,58 +466,6 @@ def download_sample_papers() -> str:
     return str(papers_dir.resolve())
 
 
-# --- Sidebar: downloads, uploads, directory selector ---
-with st.sidebar:
-    # Download sample papers
-    if st.button("📥 Download Sample Papers", use_container_width=True):
-        with st.spinner("Downloading PDFs..."):
-            papers_directory = download_sample_papers()
-        st.success("Done!")
-        st.session_state["papers_directory"] = papers_directory
-
-    # Upload your own PDFs
-    st.header("📤 Upload Papers")
-    uploaded_files = st.file_uploader(
-        "Upload one or more PDFs",
-        type=["pdf"],
-        accept_multiple_files=True,
-    )
-    if uploaded_files:
-        # Save into the current papers directory (default: sample_papers)
-        papers_dir = Path(
-            safe_session_path(
-                st.session_state.get("papers_directory", str(SESSION_ROOT))
-            )
-        )
-        papers_dir.mkdir(exist_ok=True, parents=True)
-        saved = []
-        for file in uploaded_files:
-            dest = papers_dir / file.name
-            with open(dest, "wb") as f:
-                f.write(file.getbuffer())
-            saved.append(file.name)
-        st.success(f"Uploaded {len(saved)} file(s): {', '.join(saved)}")
-        st.session_state["uploaded_last"] = saved
-
-    # Directory selector
-    if IS_CLOUD:
-        papers_directory = str(SESSION_ROOT)
-
-    else:
-        proposed = st.text_input(
-            "Papers Directory",
-            value=st.session_state.get("papers_directory", str(SESSION_ROOT)),
-            help="Must stay under the session folder.",
-        )
-        papers_directory = safe_session_path(proposed)
-        st.session_state["papers_directory"] = papers_directory
-
-    st.divider()
-    st.caption(f"paper-qa version: **{_pq.__version__}**")
-    if st.session_state.get("show_api_help"):
-        show_api_key_modal()
-
-
 # =========================
 # PaperQA Settings
 # =========================
@@ -605,20 +553,85 @@ async def rebuild_index_async(
 
 
 # =========================
-# Toolbar: single "Force Rebuild" (now nukes + rebuilds)
+# UI: Upload/Index first, then Q&A
 # =========================
-col_a, col_b = st.columns([1, 2], vertical_alignment="top")
+st.markdown("## 🤖 PaperQA2 + Gemini — Streamlit App")
+st.caption(
+    "Step 1: Add PDFs → Step 2: Rebuild Index → Step 3: Ask questions & summarize."
+)
 
+# --- Step 1: Papers (Download / Upload / Pick Directory) ---
+with st.container():
+    st.markdown("### 1) Add Papers")
+    cols = st.columns([1, 2])
+
+    with cols[0]:
+        if st.button("📥 Download Sample Papers", use_container_width=True):
+            with st.spinner("Downloading PDFs..."):
+                papers_directory = download_sample_papers()
+            st.success("Done!")
+            st.session_state["papers_directory"] = papers_directory
+
+    with cols[1]:
+        uploaded_files = st.file_uploader(
+            "Upload one or more PDFs", type=["pdf"], accept_multiple_files=True
+        )
+        if uploaded_files:
+            papers_dir = Path(
+                safe_session_path(
+                    st.session_state.get("papers_directory", str(SESSION_ROOT))
+                )
+            )
+            papers_dir.mkdir(exist_ok=True, parents=True)
+            saved = []
+            for file in uploaded_files:
+                dest = papers_dir / file.name
+                with open(dest, "wb") as f:
+                    f.write(file.getbuffer())
+                saved.append(file.name)
+            st.success(f"Uploaded {len(saved)} file(s): {', '.join(saved)}")
+            st.session_state["uploaded_last"] = saved
+
+    # Directory selector (cloud = fixed session folder)
+    st.markdown("#### Papers Directory")
+    if IS_CLOUD:
+        papers_directory = str(SESSION_ROOT)
+        st.info(f"Using session folder: `{papers_directory}`")
+    else:
+        proposed = st.text_input(
+            "Folder under your private session root",
+            value=st.session_state.get("papers_directory", str(SESSION_ROOT)),
+            help="Path must remain under this session’s private folder.",
+        )
+        papers_directory = safe_session_path(proposed)
+
+    st.session_state["papers_directory"] = papers_directory
+
+    # Quick listing
+    try:
+        list_dir = Path(safe_session_path(papers_directory))
+        files = [p.name for p in list_dir.glob("*.pdf")] + [
+            p.name for p in list_dir.glob("*.txt")
+        ]
+        if files:
+            st.markdown("**Detected PDFs / Texts:** " + ", ".join(files))
+        else:
+            st.info("No PDFs or text files found in the selected directory.")
+    except Exception as e:
+        st.error(f"Could not list directory: {e}")
+
+# --- Step 2: Index Rebuild (nukes + rebuild) ---
+st.markdown("### 2) Build / Rebuild Index")
+with st.expander("📑 Current PDF stats", expanded=False):
+    st.code(list_pdf_stats(safe_session_path(papers_directory)), language="text")
+
+col_a, col_b = st.columns([1, 2], vertical_alignment="top")
 with col_a:
     if st.button(
         "📦 Force Rebuild Index",
         help="Fully clears caches and rebuilds the index from scratch",
+        use_container_width=True,
     ):
-        with st.expander("📑 Current PDF stats"):
-            st.code(
-                list_pdf_stats(safe_session_path(papers_directory)), language="text"
-            )
-
         # Extra safety: reload the search module to kill in-process singletons
         try:
             import paperqa.agents.search as pqs
@@ -634,7 +647,6 @@ with col_a:
         with st.spinner("Rebuilding index from scratch..."):
             t0 = time.perf_counter()
             try:
-                # Reassert PQA_HOME before rebuild
                 os.environ.setdefault("PQA_HOME", os.environ["PAPERQA_CACHE_DIR"])
                 salt = str(time.time_ns())
                 _ = run_async(
@@ -649,20 +661,11 @@ with col_a:
                 st.error(f"Fresh rebuild failed: {e}")
 
 with col_b:
-    try:
-        list_dir = Path(safe_session_path(papers_directory))
-        files = [p.name for p in list_dir.glob("*.pdf")] + [
-            p.name for p in list_dir.glob("*.txt")
-        ]
-        if files:
-            st.write("**Detected PDFs and Texts:**", ", ".join(files))
-        else:
-            st.info("No PDFs or text files found in the selected directory.")
-    except Exception as e:
-        st.error(f"Could not list directory: {e}")
+    st.caption(f"paper-qa version: **{_pq.__version__}**")
+    if not IS_CLOUD:
+        st.caption(f"📂 Papers directory: `{papers_directory}`")
 
-if not IS_CLOUD:
-    st.caption(f"📂 Using papers directory: `{papers_directory}`")
+st.divider()
 
 
 # =========================
@@ -810,20 +813,15 @@ TASKS:
 
 
 # =========================
-# UI Tabs
+# UI Tabs (after uploads & index)
 # =========================
-st.markdown("## 🤖 PaperQA2 + Gemini — Streamlit App")
-st.caption(
-    "Upload PDFs → rebuild index → ask a question about the papers→ summarize the answer (detailed + short)."
-)
-
 tab_custom, tab_summaries, tab_tips = st.tabs(
     ["Custom Query", "Summaries", "Usage Tips"]
 )
 
 # --- Custom Query
 with tab_custom:
-    st.markdown("### 🎯 Interactive Custom Query")
+    st.markdown("### 3) Ask a Question")
     custom_q = st.text_input(
         "Enter your question",
         value="How do transformers handle long sequences?",
@@ -1000,3 +998,7 @@ with tab_tips:
 - Cache by keeping the app session alive
         """
     )
+
+# Show API key help modal if requested
+if st.session_state.get("show_api_help"):
+    show_api_key_modal()
