@@ -563,34 +563,33 @@ st.caption(
 # --- Step 1: Papers (Download / Upload / Pick Directory) ---
 with st.container():
     st.markdown("### 1) Add Papers")
-    cols = st.columns([1, 2])
 
-    with cols[0]:
-        if st.button("📥 Download Sample Papers", use_container_width=True):
-            with st.spinner("Downloading PDFs..."):
-                papers_directory = download_sample_papers()
-            st.success("Done!")
-            st.session_state["papers_directory"] = papers_directory
+    if st.button("📥 Download Sample Papers", use_container_width=False):
+        with st.spinner("Downloading PDFs..."):
+            papers_directory = download_sample_papers()
+        st.success("Done!")
+        st.session_state["papers_directory"] = papers_directory
 
-    with cols[1]:
+    with st.expander("📤 Upload Papers", expanded=True):
         uploaded_files = st.file_uploader(
             "Upload one or more PDFs", type=["pdf"], accept_multiple_files=True
         )
-        if uploaded_files:
-            papers_dir = Path(
-                safe_session_path(
-                    st.session_state.get("papers_directory", str(SESSION_ROOT))
-                )
+
+    if uploaded_files:
+        papers_dir = Path(
+            safe_session_path(
+                st.session_state.get("papers_directory", str(SESSION_ROOT))
             )
-            papers_dir.mkdir(exist_ok=True, parents=True)
-            saved = []
-            for file in uploaded_files:
-                dest = papers_dir / file.name
-                with open(dest, "wb") as f:
-                    f.write(file.getbuffer())
-                saved.append(file.name)
-            st.success(f"Uploaded {len(saved)} file(s): {', '.join(saved)}")
-            st.session_state["uploaded_last"] = saved
+        )
+        papers_dir.mkdir(exist_ok=True, parents=True)
+        saved = []
+        for file in uploaded_files:
+            dest = papers_dir / file.name
+            with open(dest, "wb") as f:
+                f.write(file.getbuffer())
+            saved.append(file.name)
+        st.success(f"Uploaded {len(saved)} file(s): {', '.join(saved)}")
+        st.session_state["uploaded_last"] = saved
 
     # Directory selector (cloud = fixed session folder)
     st.markdown("#### Papers Directory")
@@ -860,7 +859,6 @@ with tab_custom:
                 "response": resp,  # keep full object for summaries
             }
 
-            # also keep compatibility with your summaries tab
             st.session_state.setdefault("last_results", {})
             st.session_state["last_results"][custom_q] = resp
         else:
