@@ -596,7 +596,6 @@ with st.container():
     st.markdown("#### Papers Directory")
     if IS_CLOUD:
         papers_directory = str(SESSION_ROOT)
-        st.info(f"Using session folder: `{papers_directory}`")
     else:
         proposed = st.text_input(
             "Folder under your private session root",
