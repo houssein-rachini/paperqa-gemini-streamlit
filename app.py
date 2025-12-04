@@ -23,14 +23,13 @@ import traceback
 st.set_page_config(page_title="PaperQA + Gemini", layout="wide")
 
 # Litellm's background logging worker binds to the loop that exists at import time.
-# Disable it to avoid cross-loop errors on Streamlit Cloud reruns.
-os.environ.setdefault("LITELLM_LOGGING_DISABLED", "true")
-os.environ.setdefault("LITELLM_LOGS_DISABLED", "true")
-os.environ.setdefault("LITELLM_LOGGING_BATCH_EVENTS", "false")
-# Belt-and-suspenders: disable other logging flags that can spawn the worker.
-os.environ.setdefault("LITELLM_LOGGING_ENABLED", "false")
-os.environ.setdefault("LITELLM_LOGGING_QUEUE_ENABLED", "false")
-os.environ.setdefault("LITELLM_LOGGING", "false")
+# Force-disable it to avoid cross-loop errors on Streamlit Cloud reruns.
+os.environ["LITELLM_LOGGING_DISABLED"] = "true"
+os.environ["LITELLM_LOGS_DISABLED"] = "true"
+os.environ["LITELLM_LOGGING_BATCH_EVENTS"] = "false"
+os.environ["LITELLM_LOGGING_ENABLED"] = "false"
+os.environ["LITELLM_LOGGING_QUEUE_ENABLED"] = "false"
+os.environ["LITELLM_LOGGING"] = "false"
 
 # Attempt to stop any already-spawned LiteLLM logging worker (best-effort).
 try:
@@ -42,7 +41,7 @@ try:
         worker = LoggingWorkerSingleton.get_instance()
         if worker is not None:
             worker.stop()
-        # Replace the singleton with a no-op to prevent new workers from binding loops.
+        # Replace the singleton hooks with no-ops to prevent new workers from binding loops.
         class _NullWorker:
             async def enqueue(self, *args, **kwargs):
                 return None
@@ -52,6 +51,13 @@ try:
 
         LoggingWorkerSingleton._instance = _NullWorker()
         LoggingWorkerSingleton.get_instance = staticmethod(lambda: None)
+        if hasattr(LoggingWorkerSingleton, "initialize"):
+            LoggingWorkerSingleton.initialize = staticmethod(lambda *a, **k: None)
+        # Clear any logger refs that might hold a queue
+        if hasattr(litellm, "logging_obj"):
+            litellm.logging_obj = None
+        if hasattr(litellm, "logging_queue"):
+            litellm.logging_queue = None
     except Exception:
         pass
 except Exception:
