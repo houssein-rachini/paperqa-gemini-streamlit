@@ -42,6 +42,16 @@ try:
         worker = LoggingWorkerSingleton.get_instance()
         if worker is not None:
             worker.stop()
+        # Replace the singleton with a no-op to prevent new workers from binding loops.
+        class _NullWorker:
+            async def enqueue(self, *args, **kwargs):
+                return None
+
+            def stop(self):
+                return None
+
+        LoggingWorkerSingleton._instance = _NullWorker()
+        LoggingWorkerSingleton.get_instance = staticmethod(lambda: None)
     except Exception:
         pass
 except Exception:
