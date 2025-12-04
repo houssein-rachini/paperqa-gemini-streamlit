@@ -1,0 +1,3 @@
+# Ignore PaperQA caches and user uploads generated at runtime
+.paperqa_cache/
+user_papers/
