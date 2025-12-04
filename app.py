@@ -14,6 +14,7 @@ import requests
 import uuid
 
 import google.generativeai as genai
+import traceback
 
 
 # =========================
@@ -398,7 +399,7 @@ with st.sidebar:
     st.selectbox("LLM model", LLM_CHOICES, key="cfg_llm")
 
     # no choices for embedding model
-    st.session_state.setdefault("cfg_embed", "gemini/text-embedding-004")
+    st.session_state.setdefault("cfg_embed", "gemini/gemini-embedding-001")
 
     # --- Generation / agent tuning ---
     temperature = st.slider("temperature", 0.0, 1.0, 0.1, 0.05, key="cfg_temp")
@@ -433,7 +434,7 @@ with st.sidebar:
         "verbosity", options=[0, 1, 2], value=1, key="cfg_verbosity"
     )
 
-curr_embed = st.session_state.get("cfg_embed", "gemini/text-embedding-004")
+curr_embed = st.session_state.get("cfg_embed", "gemini/gemini-embedding-001")
 prev_embed = st.session_state.get("_prev_embed", None)
 if prev_embed is None:
     st.session_state["_prev_embed"] = curr_embed
@@ -497,7 +498,7 @@ def create_gemini_settings(
 
     # Pull from sidebar (with same defaults as notebook)
     llm = st.session_state.get("cfg_llm", "gemini/gemini-2.5-flash")
-    embed = st.session_state.get("cfg_embed", "gemini/text-embedding-004")
+    embed = st.session_state.get("cfg_embed", "gemini/gemini-embedding-001")
     temp = st.session_state.get("cfg_temp", 0.1)
 
     sc = int(st.session_state.get("cfg_search_count", 6))
@@ -695,7 +696,12 @@ class PaperQAAgent:
                     response = ask(question, settings=self.settings)
             return response
         except Exception as e:
-            st.error(f"Error processing question: {e}")
+            debug_errors = os.getenv("DEBUG_ERRORS") == "1"
+            if debug_errors:
+                traceback.print_exc()
+                st.exception(e)
+            else:
+                st.error("Error processing question.")
             return None
 
     def display_answer(self, response):
