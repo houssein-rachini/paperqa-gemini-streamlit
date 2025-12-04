@@ -27,6 +27,25 @@ st.set_page_config(page_title="PaperQA + Gemini", layout="wide")
 os.environ.setdefault("LITELLM_LOGGING_DISABLED", "true")
 os.environ.setdefault("LITELLM_LOGS_DISABLED", "true")
 os.environ.setdefault("LITELLM_LOGGING_BATCH_EVENTS", "false")
+# Belt-and-suspenders: disable other logging flags that can spawn the worker.
+os.environ.setdefault("LITELLM_LOGGING_ENABLED", "false")
+os.environ.setdefault("LITELLM_LOGGING_QUEUE_ENABLED", "false")
+os.environ.setdefault("LITELLM_LOGGING", "false")
+
+# Attempt to stop any already-spawned LiteLLM logging worker (best-effort).
+try:
+    import litellm
+    litellm.disable_telemetry = True
+    try:
+        from litellm.litellm_core_utils.logging_worker import LoggingWorkerSingleton
+
+        worker = LoggingWorkerSingleton.get_instance()
+        if worker is not None:
+            worker.stop()
+    except Exception:
+        pass
+except Exception:
+    pass
 
 
 # --- Cloud / Local detection ---
