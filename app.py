@@ -21,6 +21,12 @@ import google.generativeai as genai
 # =========================
 st.set_page_config(page_title="PaperQA + Gemini", layout="wide")
 
+# Litellm's background logging worker binds to the loop that exists at import time.
+# Disable it to avoid cross-loop errors on Streamlit Cloud reruns.
+os.environ.setdefault("LITELLM_LOGGING_DISABLED", "true")
+os.environ.setdefault("LITELLM_LOGS_DISABLED", "true")
+os.environ.setdefault("LITELLM_LOGGING_BATCH_EVENTS", "false")
+
 
 # --- Cloud / Local detection ---
 def _env(name, default=""):
@@ -384,7 +390,7 @@ with st.sidebar:
         "gemini/gemini-2.5-pro",
     ]
     EMBED_CHOICES = [
-        "gemini/text-embedding-004",
+        "gemini/gemini-embedding-001",
     ]
 
     # --- Select models ---
