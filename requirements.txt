@@ -5,3 +5,4 @@ requests>=2.31.0
 PyPDF2>=3.0.1
 litellm==1.74.15.post2
 coredis<6
+paper-qa[pymupdf]
